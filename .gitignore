@@ -1,6 +1,7 @@
 # Database
 *.db
 *.db-journal
+/tmp/diary.db
 
 # Uploads
 uploads/
@@ -16,8 +17,6 @@ env/
 venv/
 .env
 .venv
-pip-log.txt
-pip-delete-this-directory.txt
 .pytest_cache/
 .coverage
 htmlcov/
@@ -27,8 +26,3 @@ htmlcov/
 .idea/
 *.swp
 *.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db

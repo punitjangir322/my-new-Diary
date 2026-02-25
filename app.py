@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, redirect, session, send_from_directory, g, url_for
+from flask import Flask, render_template_string, request, redirect, session, send_from_directory, g
 import sqlite3, os, uuid, sys
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -7,33 +7,39 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey123!@#')
 
-# Vercel detection
-IS_VERCEL = os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV')
+# Vercel environment detection
+IS_VERCEL = os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV') is not None
 
-# Database and upload folder paths
+# Database and upload paths - CRITICAL for Vercel
 if IS_VERCEL:
-    # Vercel me /tmp directory use karo (writable)
-    DATABASE = "/tmp/diary.db"
-    UPLOAD_FOLDER = "/tmp/uploads"
+    # Vercel mein sirf /tmp writable hai
+    DATABASE = os.path.join('/tmp', 'diary.db')
+    UPLOAD_FOLDER = os.path.join('/tmp', 'uploads')
 else:
-    # Local development
-    DATABASE = "diary.db"
-    UPLOAD_FOLDER = "uploads"
+    DATABASE = 'diary.db'
+    UPLOAD_FOLDER = 'uploads'
 
-# Create upload folder if it doesn't exist
+# Create directories with proper permissions
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(os.path.dirname(DATABASE) if os.path.dirname(DATABASE) else '.', exist_ok=True)
 
-print(f"Starting app in {'Vercel' if IS_VERCEL else 'Local'} mode")
+print(f"Environment: {'Vercel' if IS_VERCEL else 'Local'}")
 print(f"Database path: {DATABASE}")
 print(f"Upload folder: {UPLOAD_FOLDER}")
+print(f"Current directory: {os.getcwd()}")
+print(f"Directory contents: {os.listdir('.')}")
 
 # ---------------- DATABASE CONNECTION ----------------
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        try:
+            g.db = sqlite3.connect(DATABASE)
+            g.db.row_factory = sqlite3.Row
+            g.db.execute("PRAGMA foreign_keys = ON")
+        except Exception as e:
+            print(f"Database connection error: {e}")
+            raise
     return g.db
 
 @app.teardown_appcontext
@@ -47,12 +53,20 @@ def close_db(exception):
 def init_db():
     """Initialize database with tables and admin user"""
     try:
+        # Ensure directory exists
+        db_dir = os.path.dirname(DATABASE)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+        
+        print(f"Initializing database at: {DATABASE}")
         db = sqlite3.connect(DATABASE)
         db.execute("PRAGMA foreign_keys = ON")
         
         # Check if tables exist
         cursor = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        if not cursor.fetchone():
+        tables_exist = cursor.fetchone() is not None
+        
+        if not tables_exist:
             print("Creating database tables...")
             # Create tables
             db.executescript("""
@@ -86,10 +100,20 @@ def init_db():
                        ("admin", generate_password_hash("admin123")))
             db.commit()
             print("Database initialized successfully with admin user")
+        else:
+            print("Database tables already exist")
+        
+        # Verify database
+        user_count = db.execute("SELECT COUNT(*) as count FROM users").fetchone()
+        print(f"Users in database: {user_count[0]}")
         
         db.close()
+        
     except Exception as e:
         print(f"Database initialization error: {e}")
+        print(f"Exception type: {type(e)}")
+        import traceback
+        traceback.print_exc()
 
 # Initialize database on startup
 init_db()
@@ -196,14 +220,6 @@ function showSignup() {
     document.querySelectorAll('.tab')[0].classList.remove('active');
     document.querySelectorAll('.tab')[1].classList.add('active');
 }
-
-// Check URL parameters for direct signup link
-window.onload = function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('signup') === '1') {
-        showSignup();
-    }
-}
 </script>
 </body>
 </html>
@@ -235,7 +251,6 @@ button:hover{opacity:0.9;transform:translateY(-1px);}
 .primary{background:#667eea;color:white;}
 .secondary{background:#48bb78;color:white;}
 .danger{background:#f56565;color:white;}
-.edit{background:#f6ad55;color:white;}
 img{max-width:100%;margin-top:10px;border-radius:8px;}
 .flash-message{padding:10px;border-radius:5px;margin-bottom:15px;text-align:center;}
 .success{background:#48bb78;color:white;}
@@ -360,6 +375,11 @@ def signup():
     except sqlite3.IntegrityError:
         return render_template_string(LOGIN_TEMPLATE, 
                                     message="Username already exists", 
+                                    message_type="error",
+                                    active_tab='signup')
+    except Exception as e:
+        return render_template_string(LOGIN_TEMPLATE, 
+                                    message=f"Error: {str(e)}", 
                                     message_type="error",
                                     active_tab='signup')
 
@@ -569,9 +589,10 @@ def view(id):
 def uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
-# Vercel handler
+# Vercel handler - CRITICAL for serverless
 def handler(request):
     return app(request)
 
+# For local development
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
