@@ -2,24 +2,14 @@
     "version": 2,
     "builds": [{
         "src": "app.py",
-        "use": "@vercel/python",
-        "config": {
-            "maxLambdaSize": "50mb"
-        }
+        "use": "@vercel/python"
     }],
     "routes": [{
         "src": "/(.*)",
         "dest": "app.py"
     }],
-    "functions": {
-        "app.py": {
-            "runtime": "python3.9",
-            "memory": 1024,
-            "maxDuration": 10
-        }
-    },
     "env": {
-        "SECRET_KEY": "your-super-secret-key-change-this",
+        "SECRET_KEY": "your-super-secret-key-change-this-123456",
         "VERCEL": "1"
     }
 }
